@@ -467,6 +467,30 @@ class RVizAStar(object):
         pub.publish(msg)
 
 
+def locate_unexplored(Ogrid, start):
+     queue = [];
+     dimx = len(Ogrid)
+     dimy = len(Ogrid[1])
+     visited = {}    #(node: parent)
+     queue.append(start)
+     visited[start] = 0
+     goal = start #set goal val to a temp of start, this is the return value
+     while queue != []:
+         current = queue.pop(0)
+         if Ogrid[current[0]][current[1]] == -1: #unmapped area
+             goal = current
+             break
+         for i in neighbors(Ogrid,current[0],current[1],dimx,dimy):
+             if i not in visited and i not in queue:
+                 queue.append(i)
+                 visited[i] = current
+     if goal != start:
+         print("new goal location found: " + goal)
+         return goal #x,y location
+     else:
+         print("no unexplored territory remains")
+         return 0
+
 if __name__ == '__main__':
     rospy.init_node('final_p1')
     rate = rospy.Rate(10)
