@@ -1,10 +1,10 @@
 <launch>
     <param name="/use_sim_time" value="true"/>
-    <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_house.launch"/>
+    <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_house.launch"/>   
     <node pkg="tf" type="static_transform_publisher" name="base_scan_tf" args="0 0 0 0 0 0 base_footprint base_scan 100"/>
     #<node pkg="tf" type="static_transform_publisher" name="map_odom_tf" args="0 0 0 0 0 0 map odom 100"/>
     <node pkg="map_server" type="map_server" name="map_server" args="/home/bamberjo/catkin_ws/src/ROB456Final_/launch/BAMBERJO.yaml"/>
     <node pkg="rviz" type="rviz" name="rviz"/>
-    <node pkg="slam_mapping" type="final_p1.py" name="final_p1" output="screen"/>
+    <node pkg="rob_final" type="final_p1.py" name="final_p1" output="screen"/>
     
 </launch>
