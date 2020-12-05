@@ -140,7 +140,7 @@ class RVizAStar(object):
                 command.linear.x = feed_forward_x + feedback_x
                 command.angular.z = feed_forward_z + feedback_z
 
-                if np.linalg.norm(robot_pos_tuple - self.map_path[-1]) < 0.2:
+                if np.linalg.norm(list(robot_pos_tuple) - list(self.map_path[-1])) < 0.2:
                     self.at_goal = True
                     command.linear.x = 0
                     command.angular.z = 0
@@ -206,7 +206,7 @@ class RVizAStar(object):
         y_vals = [map_path[0][1]]
         #Create the times array and the angular velocity array
         for i in range(1,len(map_path)):
-            segment_length = np.linalg.norm(map_path[i]-map_path[i-1])
+            segment_length = np.linalg.norm(list(map_path[i])-list(map_path[i-1]))
             segment_time = segment_length/self.x_speed #This is the time that it will take the robot to drive this segment
             times.append(times[-1] + segment_time)
 
