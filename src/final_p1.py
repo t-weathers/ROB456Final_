@@ -466,6 +466,16 @@ class RVizAStar(object):
 
             cv2.imwrite("/home/bamberjo/flooded.png",blank)
         return path
+    
+    def is_occupied(arr,x,y):
+        #value can be [0,1,-1]
+        #arr is occupied if val is 1 or -1
+        #arr is not occupied if val is 0
+        if arr[x,y] == 0:
+            return False
+        return True
+        
+
 
     def neighbors(self, arr, x, y, dimx, dimy):
         """
@@ -490,28 +500,28 @@ class RVizAStar(object):
 
         output = []  # above, above left, left, bottom left, below, below right, right, above right)
         if y > 0:
-            if not arr[int(x), int(y - 1)]:
+            if not is_occupied(arr,int(x),int(y-1)):
                 output.append((x, y - 1))  # above
         if x > 0 and y > 0:
-            if not arr[int(x - 1), int(y - 1)]:
+            if not is_occupied(arr,int(x-1),int(y-1)):
                 output.append((x - 1, y - 1))  # left-above
         if y > 0 and x < dimx - 1:
-            if not arr[int(x + 1), int(y - 1)]:
+            if not is_occupied(arr,int(x+1),int(y-1)):
                 output.append((x + 1, y - 1))  # right-above
         if x > 0:
-            if not arr[int(x - 1), int(y)]:
+            if not is_occupied(arr,int(x-1),int(y)):
                 output.append((x - 1, y))  # left
         if x > 0 and y < dimy - 1:
-            if not arr[int(x - 1), int(y + 1)]:
+            if not is_occupied(arr,int(x-1),int(y+1)):
                 output.append((x - 1, y + 1))  # left below
         if x < dimx - 1 and y < dimy - 1:
-            if not arr[int(x + 1), int(y + 1)]:
+            if not is_occupied(arr,int(x+1),int(y+1)):
                 output.append((x + 1, y + 1))  # right below
         if y < dimy - 1:
-            if not arr[int(x), int(y + 1)]:
+            if not is_occupied(arr,int(x),int(y+1)):
                 output.append((x, y + 1))  # below
         if x < (dimx - 1):
-            if not arr[int(x + 1), int(y)]:
+            if not is_occupied(arr,int(x+1),int(y)):
                 output.append((x + 1, y))  # right
         return output
 
