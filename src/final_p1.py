@@ -361,15 +361,34 @@ class RVizAStar(object):
             binary_occupancy = []
             #binary_occupancy = [prob > self.empty_thresh for prob in self.map_data]
             #Testing Code
-            for prob in self.map_data:
-                binary_occupancy.append(prob > self.empty_thresh)
-                if prob > self.empty_thresh:
-                    #print "occupied"
-                    #print len(binary_occupancy)
-                    pass
+
+            #for prob in self.map_data:
+            #   binary_occupancy.append(prob > self.empty_thresh)
+            #   if prob > self.empty_thresh:
+            #       #print "occupied"
+            #       #print len(binary_occupancy)
+            #       pass
             #Reshape the row major array
+            for prob in self.map_data:
+                if prob > self.empty_thresh:
+                    binary_occupancy.append(1)
+                elif prob == -1:
+                    binary_occupancy.append(-1)
+                else:
+                    binary_occupancy.append(0)
+
+            print "GOT HERE"
+
+
             self.binary_occupancy_grid = np.reshape(binary_occupancy,(self.map_metadata.height,self.map_metadata.width))
             self.binary_occupancy_grid = np.transpose(self.binary_occupancy_grid)
+
+            print "BINARY_OCCUPANCY_GRID"
+            print "\n"
+            print self.binary_occupancy_grid
+            print "\n"
+
+
 
             grid_buffer = self.binary_occupancy_grid.copy()
             if buffer > 0:
@@ -383,15 +402,15 @@ class RVizAStar(object):
                 for i in range(grid_x):
                     for j in range(grid_y):
                         #Check and see if the that one is filled
-                        if self.binary_occupancy_grid[i,j]:
+                        if self.binary_occupancy_grid[i,j] == 1:
                             #Add to all of the cells that are within the specified distance
                             for dx in range(-buffer,buffer):
                                 for dy in range(-buffer,buffer):
                                     #Check if that cell is already filled
-                                    if not grid_buffer[i+dx,j+dy]:
+                                    if not grid_buffer[i+dx,j+dy] == 1:
                                         #Check and see if that cell is within the specified distance
                                         if dx**2+dy**2 <= buffer**2:
-                                            grid_buffer[i + dx, j + dy] = True
+                                            grid_buffer[i + dx, j + dy] = 1
                                             #print "changed a cell"
                 self.binary_occupancy_grid = grid_buffer
 
@@ -466,18 +485,19 @@ class RVizAStar(object):
 
             cv2.imwrite("/home/bamberjo/flooded.png",blank)
         return path
+    
+    def is_occupied(self,arr,x,y):
+        #value can be [0,1,-1]
+        #arr is occupied if val is 1 or -1
+        #arr is not occupied if val is 0
+        if arr[x,y] == 0:
+            return False
+        return True
+        
+
 
     def neighbors(self, arr, x, y, dimx, dimy):
-        """
-        ***TODO***
-        need to update with an is_occupied function to support -1,0,1 format
-        :param arr:
-        :param x:
-        :param y:
-        :param dimx:
-        :param dimy:
-        :return: all open neighboring pixels
-        """
+
         if x >= dimx:
             return -1
         elif y >= dimy:
@@ -490,28 +510,28 @@ class RVizAStar(object):
 
         output = []  # above, above left, left, bottom left, below, below right, right, above right)
         if y > 0:
-            if not arr[int(x), int(y - 1)]:
+            if not self.is_occupied(arr,int(x),int(y-1)):
                 output.append((x, y - 1))  # above
         if x > 0 and y > 0:
-            if not arr[int(x - 1), int(y - 1)]:
+            if not self.is_occupied(arr,int(x-1),int(y-1)):
                 output.append((x - 1, y - 1))  # left-above
         if y > 0 and x < dimx - 1:
-            if not arr[int(x + 1), int(y - 1)]:
+            if not self.is_occupied(arr,int(x+1),int(y-1)):
                 output.append((x + 1, y - 1))  # right-above
         if x > 0:
-            if not arr[int(x - 1), int(y)]:
+            if not self.is_occupied(arr,int(x-1),int(y)):
                 output.append((x - 1, y))  # left
         if x > 0 and y < dimy - 1:
-            if not arr[int(x - 1), int(y + 1)]:
+            if not self.is_occupied(arr,int(x-1),int(y+1)):
                 output.append((x - 1, y + 1))  # left below
         if x < dimx - 1 and y < dimy - 1:
-            if not arr[int(x + 1), int(y + 1)]:
+            if not self.is_occupied(arr,int(x+1),int(y+1)):
                 output.append((x + 1, y + 1))  # right below
         if y < dimy - 1:
-            if not arr[int(x), int(y + 1)]:
+            if not self.is_occupied(arr,int(x),int(y+1)):
                 output.append((x, y + 1))  # below
         if x < (dimx - 1):
-            if not arr[int(x + 1), int(y)]:
+            if not self.is_occupied(arr,int(x+1),int(y)):
                 output.append((x + 1, y))  # right
         return output
 
