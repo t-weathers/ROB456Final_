@@ -63,9 +63,12 @@ class RVizAStar(object):
         self.prev_ang_err = 0
         self.prev_x_err = 0
         self.prev_time = 0
+        self.points_to_draw = []
+        self.map_counter = 0
+
 
         #Movement parameters
-        self.x_speed = 1
+        self.x_speed = .2
         self.x_back = .2
         self.x_accel_fwd = .2
         self.x_accel_bkwd = .1
@@ -92,15 +95,19 @@ class RVizAStar(object):
 
     def map_callback(self, msg):
         #First map callback for P2 comes from imported PGM file, for P3, this won't happen
-        rospy.loginfo('In map callback')
-        print "Map Recieved"
+        #rospy.loginfo('In map callback')
+        #print "Map Recieved"
         self.map_data = msg.data #
         self.map_metadata = msg.info
         self.pub.publish(True)
-        self.problem_one()
+        self.map_counter += 1
+        print "MY MAP COUNTER: " + str(self.map_counter)
+        if self.problem_started == False:
+            self.problem_one()
+            self.map_counter = 0
 
     def odom_callback(self, msg):
-        rospy.loginfo('In odom callback' + str(self.odom_pos))
+        #rospy.loginfo('In odom callback' + str(self.odom_pos))
         self.odom_pos = msg.pose.pose
         try:
             h = Header()
@@ -112,11 +119,14 @@ class RVizAStar(object):
             # How do we keep this 'map' frame the same while we are moving
             # ***TO TRY**** Publishing our own saved version of the map which is the one that we used for A*
             new_pose = self.tf_buffer.transform(pose, 'map', rospy.Duration(1.0))
-            rospy.logdebug(new_pose)
+            #rospy.logdebug(new_pose)
             self.robot_map_pos = new_pose.pose
             ori = self.robot_map_pos.orientation
             (r, p, yaw) = euler_from_quaternion([ori.x, ori.y, ori.z, ori.w])
             self.robot_map_pos_z_ori = yaw
+            #self.draw_points([(self.robot_map_pos.position.x,self.robot_map_pos.position.y)],self.marker_pub,False,1.0,1.0)
+
+            self.points_to_draw.append((self.robot_map_pos.position.x,self.robot_map_pos.position.y))
 
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
             rospy.logwarn(e)
@@ -140,9 +150,16 @@ class RVizAStar(object):
             if not self.pre_orientation_completed and self.traj_generated:
                 #rotate until within the angular velocity range
                 ang_goal = math.atan2(self.map_path[1][1]-self.map_path[0][1],self.map_path[1][0]-self.map_path[0][0])
-                if abs(self.robot_map_pos_z_ori - ang_goal) > 0.1: #within the goal thres
-                    init_ang_dir = (self.robot_map_pos_z_ori - ang_goal - np.pi)/abs(self.robot_map_pos_z_ori - ang_goal - np.pi)
-                    command.angular.z = init_ang_dir * 1.5;
+                robot_pos_tuple = (self.robot_map_pos.position.x, self.robot_map_pos.position.y)
+                print "ANGLE_ERROR_INIT: " + str(self.robot_map_pos_z_ori - ang_goal)
+                ang_err_reading = self.ang_err(0, robot_pos_tuple, self.robot_map_pos_z_ori)
+                print "ANG_ERR_READING:  " + str(ang_err_reading)
+                #if abs(self.robot_map_pos_z_ori - ang_goal) > 0.1: #within the goal thres
+                #    init_ang_dir = (self.robot_map_pos_z_ori - ang_goal - np.pi)/abs(self.robot_map_pos_z_ori - ang_goal - np.pi)
+                #    command.angular.z = init_ang_dir * 1.5;
+                if abs(ang_err_reading) > 0.1: #within the goal thres
+                    init_ang_dir = (ang_err_reading)/abs(ang_err_reading)
+                    command.angular.z = init_ang_dir * 0.5;
                 else:
                     command.angular.z = 0
                     self.pre_orientation_completed = True
@@ -151,12 +168,12 @@ class RVizAStar(object):
                 command.linear.x = 0
             elif self.traj_generated:
                 #This is where we do the actual path following
-                kp_x = 6
+                kp_x = 4
                 kd_x = 0.5
-                kp_ang = 4
+                kp_ang = 2
                 kd_ang = 0.5
 
-                curr_time = rospy.get_time() - self.robot_move_start_time
+                curr_time = rospy.get_time() - self.robot_move_start_time + math.sqrt(2*self.x_accel_fwd*self.x_back)
                 robot_pos_tuple = (self.robot_map_pos.position.x,self.robot_map_pos.position.y)
 
                 feed_forward_x = self.lin_x_feedfwd(curr_time)
@@ -172,9 +189,26 @@ class RVizAStar(object):
                 de_ang_dt = (e_ang - self.prev_ang_err) / (curr_time - self.prev_time)
                 self.prev_ang_err = e_ang
                 feedback_z = kp_ang * e_ang + kd_ang * de_ang_dt
-                #print "robot_ori :" + str(self.robot_map_pos_z_ori)
-                #print "e_ang: " + str(e_ang)
-                #print "path_dir: " + str(e_ang + self.robot_map_pos_z_ori)
+                #self.draw_points([self.expected_point(curr_time)], self.marker_pub,
+                                 #False, 3.0, 2.0)
+
+                self.points_to_draw.append(self.expected_point(curr_time))
+                #add the map points as well
+                for i in range(len(self.binary_occupancy_grid)):
+                    for j in range(len(self.binary_occupancy_grid[0])):
+                        if self.binary_occupancy_grid[i,j] == 1:
+                            #print "working"
+                            self.points_to_draw.append(self.occ_grid_to_map_pos((i,j)))
+                self.draw_points(self.points_to_draw,self.marker_pub,False,1.0,1.0,8,"None")
+                self.points_to_draw = []
+                #self.draw_points([(0,0)],self.marker_pub,False,1.0,1.0,9,"Test")
+                #print "expected pts"
+                #print self.expected_point(curr_time)
+                #for i in range(50):
+                #    print " "
+                print "robot_ori :" + str(self.robot_map_pos_z_ori)
+                print "e_ang: " + str(e_ang)
+                print "path_dir: " + str(e_ang + self.robot_map_pos_z_ori)
 
                 command.linear.x = 0*feed_forward_x + feedback_x
                 command.angular.z = 0*feed_forward_z + feedback_z
@@ -183,32 +217,47 @@ class RVizAStar(object):
                     self.at_goal = True
                     command.linear.x = 0
                     command.angular.z = 0
+                    self.driving = False
+                    self.problem_started = False
+                    #print "***************HEY****************"
 
                 self.prev_time = curr_time
             self.move_pub.publish(command)
 
-
-
-        self.problem_one()
 
     def problem_one(self):
         """
         This is the method that will complete all of the code for problem one
         """
 
-        #Step 1: Ensure that both the map and the odom_pos are populated
-        if self.map_data is not None and self.robot_map_pos is not None and not self.problem_started:
+    #Step 1: Ensure that both the map and the odom_pos are populated
+        if self.map_data is not None and self.robot_map_pos is not None:
             self.problem_started = True
             #rospy.sleep(2)
             #Step 2: Rearrange the row major data to the proper 2D array format
             self.reshape_thresh_occupancy_grid(8)
             #Step 3: Convert the robot_map_pos to map_pos and then to the image_coords
-            end_map_pos = Pose(Point(-6,-1,0),Quaternion(0,0,0,1))
-
             start_occ_loc = self.map_pos_to_occ_grid(self.robot_map_pos)
+            print "ROBOT POSE: " + str(self.robot_map_pos.position.x) + "," + str(self.robot_map_pos.position.y)
+
+            end_occ_loc = self.locate_unexplored(self.binary_occupancy_grid,start_occ_loc)
+
+
+            print start_occ_loc
+            print end_occ_loc
+            #for i in range(50):
+            #    print "******************************************"
+            #rospy.sleep(10)
+
+            #Reset the drawing thing
+            self.points_to_draw = []
+            #x_goal_map = self.occ_grid_to_map_pos()
+            #end_map_pos = Pose(Point(-6,-1,0),Quaternion(0,0,0,1))
+
+            #start_occ_loc = self.map_pos_to_occ_grid(self.robot_map_pos)
             #print self.robot_map_pos.position.x
             #print self.robot_map_pos.position.y_grid(self.robot_map_pos)
-            end_occ_loc = self.map_pos_to_occ_grid(end_map_pos)
+            #end_occ_loc = self.map_pos_to_occ_grid(end_map_pos)
 
             #Plot these points for reference
             #self.draw_points([(self.robot_map_pos.position.x, self.robot_map_pos.position.y), \
@@ -221,11 +270,25 @@ class RVizAStar(object):
             #print self.binary_occupancy_grid[int(end_occ_loc[0]), int(end_occ_loc[1])]
             #Step 4: Run A* with the given occupancy grid and the start and end locations
             self.occ_path = self.A_star(self.binary_occupancy_grid,start_occ_loc,end_occ_loc)
+            #for i in range(50):
+                #print "******************************************"
+            #rospy.sleep(10)
+            #print "occ path"
+            #print self.occ_path
 
             #print self.occ_path
 
             #Step 5 Convert all to map_pos
             self.map_path = [self.occ_grid_to_map_pos(loc) for loc in self.occ_path]
+            print "End POSE: " + str(self.map_path[-1])
+            for i in range(50):
+                print "******************************************"
+            #rospy.sleep(10)
+            print "map path"
+            print self.map_path
+            #self.points_to_draw = self.map_path
+            #self.draw_points(self.map_path, self.marker_pub, False,
+             #                2.0, 200.0)
 
             #print self.map_path
 
@@ -377,16 +440,16 @@ class RVizAStar(object):
                 else:
                     binary_occupancy.append(0)
 
-            print "GOT HERE"
+            #print "GOT HERE"
 
 
             self.binary_occupancy_grid = np.reshape(binary_occupancy,(self.map_metadata.height,self.map_metadata.width))
             self.binary_occupancy_grid = np.transpose(self.binary_occupancy_grid)
 
-            print "BINARY_OCCUPANCY_GRID"
-            print "\n"
-            print self.binary_occupancy_grid
-            print "\n"
+            #print "BINARY_OCCUPANCY_GRID"
+            #print "\n"
+            #print self.binary_occupancy_grid
+            #print "\n"
 
 
 
@@ -437,7 +500,7 @@ class RVizAStar(object):
             #print current
             #print goal
             if current[1] == goal:
-                print("goal node reached")
+                #print("goal node reached")
                 break  # success
             for i in self.neighbors(map, current[1][0], current[1][1], dimx, dimy):
                 #print distance_from_start
@@ -490,11 +553,57 @@ class RVizAStar(object):
         #value can be [0,1,-1]
         #arr is occupied if val is 1 or -1
         #arr is not occupied if val is 0
-        if arr[x,y] == 0:
+        if arr[x,y] <= 0:
             return False
         return True
-        
 
+    def is_occupied_explore(self,arr,x,y):
+        #value can be [0,1,-1]
+        #arr is occupied if val is 1 or -1
+        #arr is not occupied if val is 0
+        if arr[x,y] == 0 or arr[x,y] == -1:
+            return False
+        return True
+
+
+    def neighbors_explore(self, arr, x, y, dimx, dimy):
+
+        if x >= dimx:
+            return -1
+        elif y >= dimy:
+            return -1
+        elif arr == []:
+            return -1
+
+        #print "x: " + str(x)
+        #print "y: " + str(y)
+
+        output = []  # above, above left, left, bottom left, below, below right, right, above right)
+        if y > 0:
+            if not self.is_occupied_explore(arr,int(x),int(y-1)):
+                output.append((x, y - 1))  # above
+        if x > 0 and y > 0:
+            if not self.is_occupied_explore(arr,int(x-1),int(y-1)):
+                output.append((x - 1, y - 1))  # left-above
+        if y > 0 and x < dimx - 1:
+            if not self.is_occupied_explore(arr,int(x+1),int(y-1)):
+                output.append((x + 1, y - 1))  # right-above
+        if x > 0:
+            if not self.is_occupied_explore(arr,int(x-1),int(y)):
+                output.append((x - 1, y))  # left
+        if x > 0 and y < dimy - 1:
+            if not self.is_occupied_explore(arr,int(x-1),int(y+1)):
+                output.append((x - 1, y + 1))  # left below
+        if x < dimx - 1 and y < dimy - 1:
+            if not self.is_occupied_explore(arr,int(x+1),int(y+1)):
+                output.append((x + 1, y + 1))  # right below
+        if y < dimy - 1:
+            if not self.is_occupied_explore(arr,int(x),int(y+1)):
+                output.append((x, y + 1))  # below
+        if x < (dimx - 1):
+            if not self.is_occupied_explore(arr,int(x+1),int(y)):
+                output.append((x + 1, y))  # right
+        return output
 
     def neighbors(self, arr, x, y, dimx, dimy):
 
@@ -542,7 +651,7 @@ class RVizAStar(object):
         D = 1
         return D * (dx + dy) + (D2 - 2 * D) * min(dx, dy)
 
-    def draw_points(self, points, pub, to_delay):
+    def draw_points(self, points, pub, to_delay,color,dur,msg_type,text):
         """
         Plots an array of points [(x, y)...] in rviz
         :param: points iterable of (x, y) pairs. If a numpy array, shape should be (n, 2)
@@ -554,12 +663,13 @@ class RVizAStar(object):
         msg.header.frame_id = "map"
         msg.header.stamp = rospy.Time.now()
         # uint8 POINTS=8
-        msg.type = 8
+        msg.type = msg_type
+        msg.text = text
         # Disappear after 1sec. Comment this line out to make them persist indefinitely
-        #msg.lifetime = rospy.rostime.Duration(1000, 0)
+        msg.lifetime = rospy.rostime.Duration(.5, 0)
         # Set marker visual properties
-        msg.color.b = 1.0
-        msg.color.a = 1.0
+        msg.color.b = color
+        msg.color.a = color
         msg.scale.x = 0.03
         msg.scale.y = 0.03
         # Copy  (x, y) into message and publish
@@ -567,39 +677,45 @@ class RVizAStar(object):
             p = Point()
             p.x = x
             p.y = y
-            p.z = 0.1  # Places all points 10cm above the ground
+            p.z = 0.2  # Places all points 10cm above the ground
             msg.points.append(p)
         # for i in range(500):
         #  pub.publish(msg)
         #  rospy.sleep(0.1)
         if to_delay:
-            rospy.sleep(5)
+            #rospy.sleep(5)
+            pass
         pub.publish(msg)
 
 
-def locate_unexplored(Ogrid, start):
-     queue = [];
-     dimx = len(Ogrid)
-     dimy = len(Ogrid[1])
-     visited = {}    #(node: parent)
-     queue.append(start)
-     visited[start] = 0
-     goal = start #set goal val to a temp of start, this is the return value
-     while queue != []:
-         current = queue.pop(0)
-         if Ogrid[current[0]][current[1]] == -1: #unmapped area
-             goal = current
-             break
-         for i in neighbors(Ogrid,current[0],current[1],dimx,dimy):
-             if i not in visited and i not in queue:
-                 queue.append(i)
-                 visited[i] = current
-     if goal != start:
-         #print("new goal location found: " + goal)
-         return goal #x,y location
-     else:
-         #print("no unexplored territory remains")
-         return 0
+    def locate_unexplored(self, Ogrid, start):
+         queue = [];
+         dimx = len(Ogrid)
+         dimy = len(Ogrid[1])
+         visited = {}           # (node: parent)
+         queue.append(start)
+         visited[start] = 0
+         goal = start           # set goal val to a temp of start, this is the return value
+         while queue != []:
+             current = queue.pop(0)
+             if Ogrid[int(current[0])][int(current[1])] == -1 and np.linalg.norm((current[1]-start[1],current[0]-start[0])) > 70: #unmapped area
+                 goal = current
+                 break
+             for i in self.neighbors_explore(Ogrid,int(current[0]),int(current[1]),dimx,dimy):
+                 #print str(len(queue))
+                 #print "found some neighbors at " + str(i[0]) + " " + str(i[1])
+                 if i not in visited and i not in queue:
+                     queue.append(i)
+                     visited[i] = current
+         if goal != start:
+             #print "new goal location found: " + str(goal)
+             return goal #x,y location
+         else:
+             #print Ogrid
+
+             cv2.imwrite("/home/bamberjo/threshed_find_unexplored.png", Ogrid * 120 + 120)
+             #print "no unexplored territory remains"
+             return 0
 
 if __name__ == '__main__':
     rospy.init_node('final_p1')
