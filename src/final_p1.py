@@ -69,7 +69,7 @@ class RVizAStar(object):
 
 
         #Movement parameters
-        self.x_speed = .2
+        self.x_speed = .4
         self.x_max = .7
         self.z_max = 1
         self.x_back = .2
@@ -183,7 +183,7 @@ class RVizAStar(object):
                 command.linear.x = 0
             elif self.traj_generated:
                 #This is where we do the actual path following
-                kp_x = 2.5
+                kp_x = 1.5
                 kd_x = 1
                 kp_ang = 1
                 kd_ang = .5
@@ -272,7 +272,7 @@ class RVizAStar(object):
             self.problem_started = True
             #rospy.sleep(2)
             #Step 2: Rearrange the row major data to the proper 2D array format
-            self.reshape_thresh_occupancy_grid(8)
+            self.reshape_thresh_occupancy_grid(6)
             #Step 3: Convert the robot_map_pos to map_pos and then to the image_coords
             start_occ_loc = self.map_pos_to_occ_grid(self.robot_map_pos)
             print "ROBOT POSE: " + str(self.robot_map_pos.position.x) + "," + str(self.robot_map_pos.position.y)
