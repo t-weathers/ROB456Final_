@@ -65,10 +65,11 @@ class RVizAStar(object):
         self.prev_time = 0
         self.points_to_draw = []
         self.map_counter = 0
+        self.too_far = False
 
 
         #Movement parameters
-        self.x_speed = .2
+        self.x_speed = .4
         self.x_back = .2
         self.x_accel_fwd = .2
         self.x_accel_bkwd = .1
@@ -99,6 +100,9 @@ class RVizAStar(object):
         #print "Map Recieved"
         self.map_data = msg.data #
         self.map_metadata = msg.info
+        print "****************************** MAP RESOLUTION *************************"
+        print str(self.map_metadata.width)
+        print str(self.map_metadata.height)
         self.pub.publish(True)
         self.map_counter += 1
         print "MY MAP COUNTER: " + str(self.map_counter)
@@ -159,7 +163,7 @@ class RVizAStar(object):
                 #    command.angular.z = init_ang_dir * 1.5;
                 if abs(ang_err_reading) > 0.1: #within the goal thres
                     init_ang_dir = (ang_err_reading)/abs(ang_err_reading)
-                    command.angular.z = init_ang_dir * 0.5;
+                    command.angular.z = init_ang_dir * 1.5;
                 else:
                     command.angular.z = 0
                     self.pre_orientation_completed = True
@@ -169,12 +173,31 @@ class RVizAStar(object):
             elif self.traj_generated:
                 #This is where we do the actual path following
                 kp_x = 4
-                kd_x = 0.5
+                kd_x = 0.6
                 kp_ang = 2
-                kd_ang = 0.5
+                kd_ang = 0.75
+
+                if self.too_far:
+                    self.robot_move_start_time += (rospy.get_time()-self.saved_time + math.sqrt(2*self.x_accel_fwd*self.x_back))
 
                 curr_time = rospy.get_time() - self.robot_move_start_time + math.sqrt(2*self.x_accel_fwd*self.x_back)
-                robot_pos_tuple = (self.robot_map_pos.position.x,self.robot_map_pos.position.y)
+                robot_pos_tuple = (self.robot_map_pos.position.x, self.robot_map_pos.position.y)
+                follower_pos = self.expected_point(curr_time)
+
+                #Check the distance
+                if np.linalg.norm([follower_pos[1] - robot_pos_tuple[1], follower_pos[0] - robot_pos_tuple[0]]) > self.x_back + .3:
+                    self.too_far = True
+                    self.saved_time = curr_time
+                else:
+                    self.too_far = False
+                    #change the start time so it won't update
+                #curr_time is the [current time]
+                # if the robot is too far away from the following point
+                    # curr_time = curr_time[-1]
+                # run
+                #else skip
+
+
 
                 feed_forward_x = self.lin_x_feedfwd(curr_time)
                 e_x = self.lin_err(curr_time, robot_pos_tuple, self.robot_map_pos_z_ori)
@@ -219,6 +242,7 @@ class RVizAStar(object):
                     command.angular.z = 0
                     self.driving = False
                     self.problem_started = False
+                    self.pre_orientation_completed = False
                     #print "***************HEY****************"
 
                 self.prev_time = curr_time
@@ -239,6 +263,24 @@ class RVizAStar(object):
             #Step 3: Convert the robot_map_pos to map_pos and then to the image_coords
             start_occ_loc = self.map_pos_to_occ_grid(self.robot_map_pos)
             print "ROBOT POSE: " + str(self.robot_map_pos.position.x) + "," + str(self.robot_map_pos.position.y)
+
+            escape_move = []
+            if self.binary_occupancy_grid[int(start_occ_loc[0]),int(start_occ_loc[1])] == 1:
+                for i in range(50):
+                    print "***************KILLEM************************"
+                #move start_occ loc back along the self.occ_path until it is in the clear and then move forward
+                #That will have to be appended to the beginning of self.occ_path
+                self.occ_path = self.occ_path[::-1]
+                i = 0
+                while(self.binary_occupancy_grid[int(self.occ_path[i][0]),int(self.occ_path[i][1])] == 1):#While the point on the path is still cccupied
+                    #Move back
+                    escape_move.append(self.occ_path[i])
+                    i += 1
+                start_occ_loc = self.occ_path[i]
+
+
+
+
 
             end_occ_loc = self.locate_unexplored(self.binary_occupancy_grid,start_occ_loc)
 
@@ -270,6 +312,14 @@ class RVizAStar(object):
             #print self.binary_occupancy_grid[int(end_occ_loc[0]), int(end_occ_loc[1])]
             #Step 4: Run A* with the given occupancy grid and the start and end locations
             self.occ_path = self.A_star(self.binary_occupancy_grid,start_occ_loc,end_occ_loc)
+
+            #Insert the escape path
+            self.occ_path = escape_move + self.occ_path
+
+            #if len(self.occ_path) > 10:
+            #    self.occ_path = self.occ_path[:len(self.occ_path) - 6]
+
+
             #for i in range(50):
                 #print "******************************************"
             #rospy.sleep(10)
@@ -698,7 +748,7 @@ class RVizAStar(object):
          goal = start           # set goal val to a temp of start, this is the return value
          while queue != []:
              current = queue.pop(0)
-             if Ogrid[int(current[0])][int(current[1])] == -1 and np.linalg.norm((current[1]-start[1],current[0]-start[0])) > 70: #unmapped area
+             if Ogrid[int(current[0])][int(current[1])] == -1 and np.linalg.norm((current[1]-start[1],current[0]-start[0])) >70: #unmapped area
                  goal = current
                  break
              for i in self.neighbors_explore(Ogrid,int(current[0]),int(current[1]),dimx,dimy):
